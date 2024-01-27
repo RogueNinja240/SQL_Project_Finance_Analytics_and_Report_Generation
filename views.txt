@@ -1,0 +1,98 @@
+----------------------------------------------------------------  VIEWS ----------------------------------------------------------------
+ 
+ -- gross sales views
+
+CREATE VIEW `gross_sales` AS
+	select 
+		ns.date,ns.fiscal_year,
+    		ns.customer_code,dc.customer,
+    		ns.market,ns.product_code,ns.product,ns.variant,
+    		ns.sold_quantity,fgp.gross_price,ns.gross_price_total
+	from net_sales ns
+		join dim_customer dc on dc.customer_code = ns.customer_code and
+						dc.market = ns.market
+		join fact_gross_price fgp on fgp.product_code=ns.product_code and 
+							fgp.fiscal_year=ns.fiscal_year
+
+
+-- net sales views
+
+CREATE VIEW `net_sales` AS
+	SELECT 
+            *, 
+    	    net_invoice_sales*(1-post_invoice_discount_pct) as net_sales
+	FROM sales_postinv_discount;
+
+-- sales postinvoice discount view
+
+CREATE VIEW `sales_postinv_discount` AS
+	SELECT 
+    	    s.date, s.fiscal_year,
+            s.customer_code, s.market,
+            s.product_code, s.product, s.variant,
+            s.sold_quantity, s.gross_price_total,
+            s.pre_invoice_discount_pct,
+            (s.gross_price_total-s.pre_invoice_discount_pct*s.gross_price_total) as net_invoice_sales,
+            (po.discounts_pct+po.other_deductions_pct) as post_invoice_discount_pct
+	FROM sales_preinv_discount s
+	JOIN fact_post_invoice_deductions po
+		ON po.customer_code = s.customer_code AND
+   		po.product_code = s.product_code AND
+   		po.date = s.date;
+
+
+-- sales preinvoice discount view 
+
+CREATE  VIEW `sales_preinv_discount` AS
+	SELECT 
+    	    s.date, 
+            s.fiscal_year,
+            s.customer_code,
+            c.market,
+            s.product_code, 
+            p.product, 
+            p.variant, 
+            s.sold_quantity, 
+            g.gross_price as gross_price_per_item,
+            ROUND(s.sold_quantity*g.gross_price,2) as gross_price_total,
+            pre.pre_invoice_discount_pct
+	FROM fact_sales_monthly s
+	JOIN dim_customer c 
+		ON s.customer_code = c.customer_code
+	JOIN dim_product p
+        	ON s.product_code=p.product_code
+	JOIN fact_gross_price g
+    		ON g.fiscal_year=s.fiscal_year
+    		AND g.product_code=s.product_code
+	JOIN fact_pre_invoice_deductions as pre
+        	ON pre.customer_code = s.customer_code AND
+    		pre.fiscal_year=s.fiscal_year
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,30 @@
+---------------------------------------------------------------- User Defined Function ----------------------------------------------------------------
+
+-- get fiscal quater 
+
+CREATE FUNCTION `get_fiscal_quarter`(
+	cal_date date
+) RETURNS char(2) 
+    DETERMINISTIC
+BEGIN
+	declare var1 char(2);
+	case
+		when month(cal_date) in (9,10,11) then set var1="Q1";
+        when month(cal_date) in (12,1,2) then set var1="Q2";
+        when month(cal_date) in (3,4,5) then set var1="Q3";
+        else set var1="Q4";
+	end case;
+RETURN var1;
+END
+
+
+-- get fiscal year 
+
+CREATE FUNCTION `get_fiscal_year`(calendar_date DATE) 
+	RETURNS int
+    	DETERMINISTIC
+	BEGIN
+        	DECLARE fiscal_year INT;
+        	SET fiscal_year = YEAR(DATE_ADD(calendar_date, INTERVAL 4 MONTH));
+        	RETURN fiscal_year;
+	END
