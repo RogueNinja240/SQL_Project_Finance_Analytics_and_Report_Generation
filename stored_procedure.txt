@@ -1,0 +1,216 @@
+---------------------------------------------------------------- Stored Procedure ----------------------------------------------------------------
+
+-- get forecast sales accuracy
+
+CREATE PROCEDURE `get_forecast_accuracy`(
+		in_fiscal_year int
+	)
+	BEGIN
+	with cte1 as 
+		(
+		  select *,
+			sum(forecast_quantity-sold_quantity) as net_error,
+			sum(forecast_quantity-sold_quantity)*100/sum(forecast_quantity) as net_error_pct,
+			sum(abs(forecast_quantity-sold_quantity)) as abs_error,
+			sum(abs(forecast_quantity-sold_quantity))*100/sum(forecast_quantity) as abs_error_pct
+       		from fact_act_est s
+ 		where fiscal_year=in_fiscal_year
+		group by customer_code
+	)
+		select 
+			cte1.*,
+			dc.customer,
+			if(abs_error_pct > 100,0, 100-abs_error_pct) as forecast_accuracy
+		from cte1
+		join dim_customer dc
+			using(customer_code)
+		order by forecast_accuracy asc;
+	END
+
+
+
+-- get market badge (Stored proc that can retrieve market badge. i.e. if total sold quantity > 5 million that market is considered "Gold" otherwise "Silver")
+
+CREATE PROCEDURE `get_market_badge`(
+        	IN in_market VARCHAR(45),
+        	IN in_fiscal_year YEAR,
+        	OUT out_level VARCHAR(45)
+	)
+	BEGIN
+             DECLARE qty INT DEFAULT 0;
+    
+    	     # Default market is India
+    	     IF in_market = "" THEN
+                  SET in_market="India";
+             END IF;
+    
+    	     # Retrieve total sold quantity for a given market in a given year
+             SELECT 
+                  SUM(s.sold_quantity) INTO qty
+             FROM fact_sales_monthly s
+             JOIN dim_customer c
+             ON s.customer_code=c.customer_code
+             WHERE 
+                  get_fiscal_year(s.date)=in_fiscal_year AND
+                  c.market=in_market;
+        
+             # Determine Gold vs Silver status
+             IF qty > 5000000 THEN
+                  SET out_level = 'Gold';
+             ELSE
+                  SET out_level = 'Silver';
+             END IF;
+	END
+
+-- get monthly gross sales for customers
+
+CREATE PROCEDURE `get_monthly_gross_sales_for_customer`(
+        	in_customer_codes TEXT
+	)
+	BEGIN
+        	SELECT 
+                    s.date, 
+                    SUM(ROUND(s.sold_quantity*g.gross_price,2)) as monthly_sales
+        	FROM fact_sales_monthly s
+        	JOIN fact_gross_price g
+               	    ON g.fiscal_year=get_fiscal_year(s.date)
+                    AND g.product_code=s.product_code
+        	WHERE 
+                    FIND_IN_SET(s.customer_code, in_customer_codes) > 0
+        	GROUP BY s.date
+        	ORDER BY s.date DESC;
+	END
+
+
+-- get top n customers by net sales 
+
+CREATE PROCEDURE `get_top_n_customers_by_net_sales`(
+        	in_market VARCHAR(45),
+        	in_fiscal_year INT,
+    		in_top_n INT
+	)
+	BEGIN
+        	select 
+                     customer, 
+                     round(sum(net_sales)/1000000,2) as net_sales_mln
+        	from net_sales s
+        	join dim_customer c
+                on s.customer_code=c.customer_code
+        	where 
+		    s.fiscal_year=in_fiscal_year 
+		    and s.market=in_market
+        	group by customer
+        	order by net_sales_mln desc
+        	limit in_top_n;
+	END
+
+
+-- get top n markets by net sales 
+
+CREATE PROCEDURE `get_top_n_markets_by_net_sales`(
+        	in_fiscal_year INT,
+    		in_top_n INT
+	)
+	BEGIN
+        	SELECT 
+                     market, 
+                     round(sum(net_sales)/1000000,2) as net_sales_mln
+        	FROM net_sales
+        	where fiscal_year=in_fiscal_year
+        	group by market
+        	order by net_sales_mln desc
+        	limit in_top_n;
+	END
+
+
+-- get top n products per division by qty sold
+
+CREATE PROCEDURE `get_top_n_products_per_division_by_qty_sold`(
+		in_fiscal_year int,
+    		in_top_n int
+		)
+	BEGIN
+		with cte1 as (
+			select 
+				p.division,
+				p.product,
+				sum(sold_quantity) as total_qty
+			from fact_sales_monthly s
+			join dim_product p 
+						on p.product_code=s.product_code
+			where fiscal_year = in_fiscal_year
+			group by p.product),
+		cte2 as(
+			select *,
+				dense_rank() over(partition by division order by total_qty desc) as d_rnk
+			from cte1)
+
+		select * from cte2 where d_rnk <=in_top_n;
+	END
+
+-- top n markets by gross sales and fiscal year
+
+CREATE PROCEDURE `top_n_markets_by_gross_sale_&_fiscal_year`(
+		in_fiscal_year int,
+    		in_top_n int
+	)
+	BEGIN
+		with cte1 as (
+			select gs.market,
+				dc.region,
+				round(sum(gs.gross_price_total)/1000000,2) as gross_total_mln
+			from gross_sales gs
+			join dim_customer dc
+					on dc.customer_code = gs.customer_code and
+					dc.market = gs.market
+			where fiscal_year = in_fiscal_year
+			group by market),
+		cte2 as (
+			select *,
+				rank() over(partition by region order by gross_total_mln desc) as rnk
+			from cte1 )
+	select 
+		* 
+	from 
+		cte2
+	where 
+		rnk<=in_top_n;
+	END
+
+
+-- top n products by netsales
+
+CREATE PROCEDURE `top_n_product_by_netsales`(
+		in_fiscal_year int,
+    		in_top_n int
+	)
+	BEGIN
+		select 
+			product,
+    			net_sales
+		from net_sales
+		where 
+			fiscal_year=in_fiscal_year
+		order by net_sales desc
+		limit in_top_n;
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
